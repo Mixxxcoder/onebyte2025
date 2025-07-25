@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Manager</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
+</head>
+<body>
+  <!-- Animated Background Shapes -->
+  <div class="background-blobs">
+    <div class="blob"></div>
+    <div class="blob"></div>
+    <div class="blob"></div>
+  </div>
+
+  <div class="top-bar">
+    <div class="toggle-container">
+      <label for="darkModeToggle" class="toggle-label">🌙 Light/Dark</label>
+      <input type="checkbox" id="darkModeToggle" />
+    </div>
+    <div class="clock" id="clockDisplay">--:--:--</div>
+  </div>
+
+  <div class="container">
+    <div id="loginPage" class="login-animation" data-aos="zoom-in">
+      <h1>Login</h1>
+      <input type="text" id="username" placeholder="Enter username" />
+      <input type="password" id="password" placeholder="Enter password" />
+      <button onclick="login()">Login</button>
+      <div id="loginError" class="error-message" style="display: none;">Incorrect username or password!</div>
+    </div>
+
+    <div id="mainApp" style="display:none" data-aos="fade-up">
+      <h1>Stock Manager</h1>
+      <button class="logout-button" onclick="logout()">Logout</button>
+
+      <div class="form-group">
+        <input type="text" id="itemName" placeholder="Product Name">
+        <input type="number" id="itemQty" placeholder="Quantity">
+        <input type="file" id="itemImage" accept="image/*" onchange="previewImage(event)">
+        <img id="preview" class="image-preview" style="display:none" />
+        <input type="text" id="employeeName" placeholder="Employee Name">
+        <button onclick="showLoadingScreen(addStock)">Add/Update Stock</button>
+      </div>
+
+      <div class="control-group">
+        <input type="text" id="searchBox" placeholder="Search" oninput="renderStocks()">
+        <select id="sortOption" onchange="renderStocks()">
+          <option value="name">Sort by Name</option>
+          <option value="qty">Sort by Quantity</option>
+        </select>
+        <button onclick="exportReport()">Export PDF</button>
+      </div>
+
+      <div id="success" class="success-message" style="display:none">Login Successful!</div>
+      <div id="stockList" class="stock-list"></div>
+    </div>
+
+    <div id="loadingScreen" class="loading-screen" style="display:none">
+      <div class="spinner"></div>
+      <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <p class="loading-text">Processing...</p>
+    </div>
+  </div>
+
+  <!-- Sound Effects -->
+  <audio id="dingSound" src="https://assets.mixkit.co/sfx/preview/mixkit-bonus-earned-in-video-game-2058.mp3"></audio>
+  <audio id="loginSuccessSound" src="https://assets.mixkit.co/sfx/preview/mixkit-positive-interface-beep-221.wav"></audio>
+  <audio id="logoutSound" src="https://assets.mixkit.co/sfx/preview/mixkit-click-error-1110.wav"></audio>
+  <audio id="deleteSound" src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-retro-jump-223.wav"></audio>
+
+  <!-- JavaScript -->
+  <script>
+    AOS.init();
+
+    const darkToggle = document.getElementById('darkModeToggle');
+    const body = document.body;
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) body.classList.add('dark-mode');
+    darkToggle.checked = isDark;
+
+    darkToggle.addEventListener('change', () => {
+      body.classList.toggle('dark-mode');
+      localStorage.setItem('darkMode', body.classList.contains('dark-mode'));
+    });
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clockDisplay").textContent = now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    const users = [
+      { username: "admin", password: "admin" },
+      { username: "manager", password: "1234" },
+      { username: "staff", password: "abcd" }
+    ];
+
+    let stocks = JSON.parse(localStorage.getItem("stocks")) || [];
+    let isEditing = false;
+    let editingName = "";
+
+    function showLoadingScreen(callback) {
+      const screen = document.getElementById("loadingScreen");
+      screen.style.display = "flex";
+      let width = 1;
+      const progress = document.getElementById("progressBar");
+      const interval = setInterval(() => {
+        if (width >= 100) {
+          clearInterval(interval);
+          screen.style.display = "none";
+          callback();
+        } else {
+          width++;
+          progress.style.width = width + "%";
+        }
+      }, 30);
+    }
+
+    function previewImage(event) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const preview = document.getElementById("preview");
+        preview.src = reader.result;
+        preview.style.display = "block";
+      };
+      reader.readAsDataURL(event.target.files[0]);
+    }
+
+    function login() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const error = document.getElementById("loginError");
+
+      const validUser = users.find(u => u.username === username && u.password === password);
+      if (validUser) {
+        error.style.display = "none";
+        showLoadingScreen(() => {
+          document.getElementById("loginPage").style.display = "none";
+          document.getElementById("mainApp").style.display = "block";
+          document.getElementById("success").style.display = "block";
+          document.getElementById("loginSuccessSound").play();
+          renderStocks();
+          setTimeout(() => {
+            document.getElementById("success").style.display = "none";
+          }, 2000);
+        });
+      } else {
+        error.style.display = "block";
+      }
+    }
+
+    function logout() {
+      if (confirm("Are you sure you want to logout?")) {
+        showLoadingScreen(() => {
+          document.getElementById("mainApp").style.display = "none";
+          document.getElementById("loginPage").style.display = "block";
+          document.getElementById("logoutSound").play();
+        });
+      }
+    }
+
+    function addStock() {
+      const name = document.getElementById("itemName").value.trim();
+      const qty = parseInt(document.getElementById("itemQty").value.trim(), 10);
+      const emp = document.getElementById("employeeName").value.trim();
+      const imageInput = document.getElementById("itemImage");
+      const preview = document.getElementById("preview");
+      const image = imageInput.files.length > 0 ? preview.src : null;
+      const time = new Date().toLocaleString();
+
+      if (!name || !qty || qty <= 0 || !emp) return;
+
+      if (isEditing) {
+        const index = stocks.findIndex(s => s.name === editingName);
+        if (index !== -1) {
+          stocks[index].name = name;
+          stocks[index].qty = qty;
+          stocks[index].emp = emp;
+          stocks[index].time = time;
+          if (image) stocks[index].image = image;
+        }
+        isEditing = false;
+        editingName = "";
+      } else {
+        const existing = stocks.find(s => s.name === name);
+        if (existing) {
+          existing.qty += qty;
+          existing.emp = emp;
+          existing.time = time;
+          if (image) existing.image = image;
+        } else {
+          stocks.push({ name, qty, emp, image: image || "", time });
+        }
+      }
+
+      localStorage.setItem("stocks", JSON.stringify(stocks));
+      renderStocks();
+      document.getElementById("itemName").value = "";
+      document.getElementById("itemQty").value = "";
+      document.getElementById("employeeName").value = "";
+      imageInput.value = "";
+      preview.style.display = "none";
+      document.getElementById("dingSound").play();
+    }
+
+    function editStock(name) {
+      const stock = stocks.find(s => s.name === name);
+      if (!stock) return;
+
+      document.getElementById("itemName").value = stock.name;
+      document.getElementById("itemQty").value = stock.qty;
+      document.getElementById("employeeName").value = stock.emp;
+      document.getElementById("preview").src = stock.image;
+      document.getElementById("preview").style.display = "block";
+
+      isEditing = true;
+      editingName = name;
+    }
+
+    function deleteStock(name) {
+      if (confirm(`Are you sure you want to delete ${name}?`)) {
+        showLoadingScreen(() => {
+          stocks = stocks.filter(s => s.name !== name);
+          localStorage.setItem("stocks", JSON.stringify(stocks));
+          document.getElementById("deleteSound").play();
+          renderStocks();
+        });
+      }
+    }
+
+    function renderStocks() {
+      const list = document.getElementById("stockList");
+      list.innerHTML = "";
+      let filtered = [...stocks];
+      const search = document.getElementById("searchBox").value.trim().toLowerCase();
+      const sort = document.getElementById("sortOption").value;
+
+      if (search) {
+        filtered = filtered.filter(s => s.name.toLowerCase().includes(search));
+      }
+      if (sort === "qty") {
+        filtered.sort((a, b) => b.qty - a.qty);
+      } else {
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      filtered.forEach(stock => {
+        const item = document.createElement("div");
+        item.className = "stock-item";
+        item.innerHTML = `
+          <img src="${stock.image}" class="stock-img" />
+          <div class="stock-name">${stock.name}</div>
+          <div class="stock-qty">Qty: ${stock.qty}</div>
+          <div class="stock-employee">By: ${stock.emp}</div>
+          <div class="stock-time">${stock.time}</div>
+          <button class="edit-button" onclick="editStock('${stock.name}')">Edit</button>
+          <button class="delete-button" onclick="deleteStock('${stock.name}')">Delete</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function exportReport() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const stockList = document.querySelectorAll(".stock-item");
+
+      if (stockList.length === 0) {
+        alert("No stock items to export!");
+        return;
+      }
+
+      const rows = [];
+      stockList.forEach(item => {
+        const name = item.querySelector(".stock-name")?.textContent || "";
+        const qty = item.querySelector(".stock-qty")?.textContent.replace("Qty: ", "") || "";
+        const emp = item.querySelector(".stock-employee")?.textContent.replace("By: ", "") || "";
+        const time = item.querySelector(".stock-time")?.textContent || "";
+        rows.push([name, qty, emp, time]);
+      });
+
+      doc.text("Stock Report", 14, 15);
+      doc.autoTable({
+        head: [["Product Name", "Quantity", "Employee", "Date & Time"]],
+        body: rows,
+        startY: 20
+      });
+
+      doc.save("stock_report.pdf");
+    }
+  </script>
+</body>
+</html>
